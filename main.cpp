@@ -6,7 +6,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include "messages.h"
+#include "protocol/messages.h"
 
 
 struct Peer {
