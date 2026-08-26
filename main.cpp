@@ -121,7 +121,6 @@ int main() {
         }
 
 
-        printf("received %zd bytes from %s:%d\n", n, inet_ntoa(sender.sin_addr), ntohs(sender.sin_port));
     }
 
 }
