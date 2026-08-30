@@ -61,9 +61,13 @@ int main() {
 
                 peer.node_id = header->node_id;
                 peer.public_endpoint.ip = sender.sin_addr.s_addr;
-                peer.public_endpoint.port = sender.sin_port;
+                peer.public_endpoint.udp_port = sender.sin_port;
+                peer.public_endpoint.tcp_port = msg->private_endpoint.tcp_port;
+
                 peer.private_endpoint.ip = msg->private_endpoint.ip;
-                peer.private_endpoint.port = msg->private_endpoint.port;
+                peer.private_endpoint.udp_port = msg->private_endpoint.udp_port;
+                peer.private_endpoint.tcp_port = msg->private_endpoint.tcp_port;
+
                 peer.last_seen = std::chrono::steady_clock::now();
 
                 peers[header->node_id] = peer;
@@ -80,7 +84,7 @@ int main() {
 
                 it->second.last_seen = std::chrono::steady_clock::now();
                 it->second.public_endpoint.ip = sender.sin_addr.s_addr;
-                it->second.public_endpoint.port = sender.sin_port;
+                it->second.public_endpoint.udp_port = sender.sin_port;
 
                 printf("Keepalive peer %lu\n", header->node_id);
                 break;
@@ -98,7 +102,9 @@ int main() {
                 Peer requester{};
                 requester.node_id = header->node_id;
                 requester.public_endpoint.ip = sender.sin_addr.s_addr;
-                requester.public_endpoint.port = sender.sin_port;
+                requester.public_endpoint.udp_port = sender.sin_port;
+                requester.public_endpoint.tcp_port = msg->private_endpoint.tcp_port;
+
                 requester.private_endpoint = msg->private_endpoint;
 
                 // notify A about B's endpoints
@@ -110,7 +116,7 @@ int main() {
                 // notify B about A's endpoints
                 sockaddr_in target_addr{};
                 target_addr.sin_family = AF_INET;
-                target_addr.sin_port = target.public_endpoint.port;
+                target_addr.sin_port = target.public_endpoint.udp_port;
                 target_addr.sin_addr.s_addr = target.public_endpoint.ip;
 
                 auto notify_b = build_notify(requester);
