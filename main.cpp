@@ -34,7 +34,11 @@ int main() {
     addr.sin_family = AF_INET;
     addr.sin_port = htons(9999);
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    ::bind(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+
+    if (::bind(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) == -1) {
+        perror("bind");
+        exit(1);
+    }
 
     std::cout << "Listening on port 9999" << std::endl;
 
