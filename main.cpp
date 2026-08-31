@@ -72,6 +72,11 @@ int main() {
 
                 peers[header->node_id] = peer;
 
+                printf("Private endpoint received: ip=%s udp_port=%d tcp_port=%d\n",
+                   inet_ntoa(*reinterpret_cast<in_addr*>(&msg->private_endpoint.ip)),
+                   ntohs(msg->private_endpoint.udp_port),
+                   ntohs(msg->private_endpoint.tcp_port));
+
                 printf("Registered peer %lu - public: %s:%d\n",
                     peer.node_id, inet_ntoa(sender.sin_addr), ntohs(sender.sin_port));
 
