@@ -57,6 +57,12 @@ int main() {
         switch (static_cast<MessageType>(header->type)) {
             case MessageType::REGISTER: {
                 auto* msg = reinterpret_cast<Register*>(buf);
+
+                printf("Raw private endpoint bytes: ip=%u udp=%u tcp=%u\n",
+                   ntohl(msg->private_endpoint.ip),
+                   ntohs(msg->private_endpoint.udp_port),
+                   ntohs(msg->private_endpoint.tcp_port));
+
                 Peer peer{};
 
                 peer.node_id = header->node_id;
