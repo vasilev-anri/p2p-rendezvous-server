@@ -9,6 +9,8 @@
 #include "protocol/messages.h"
 
 
+constexpr auto PEER_TIMEOUT = std::chrono::seconds(90);
+
 struct Peer {
     uint64_t node_id;
     Endpoint private_endpoint;
@@ -23,6 +25,18 @@ Notify build_notify(Peer& peer) {
     notify.public_endpoint = peer.public_endpoint;
     notify.private_endpoint = peer.private_endpoint;
     return notify;
+}
+
+void expire_peers(std::unordered_map<uint64_t, Peer>& peers) {
+    auto now = std::chrono::steady_clock::now();
+    auto before = peers.size();
+    std::erase_if(peers, [&](const auto& pair) {
+        return now - pair.second.last_seen > PEER_TIMEOUT;
+    });
+    auto removed = before - peers.size();
+    if (removed > 0) {
+        printf("Expired %zu stale peers\n", removed);
+    }
 }
 
 int main() {
@@ -42,6 +56,11 @@ int main() {
 
     std::cout << "Listening on port 9999" << std::endl;
 
+    struct timeval tv{};
+    tv.tv_sec = 30;
+    tv.tv_usec = 0;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
     while (true) {
         uint8_t buf[1024];
         sockaddr_in sender{};
@@ -49,7 +68,13 @@ int main() {
 
         ssize_t n = ::recvfrom(fd, buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&sender), &sender_len);
 
-        if (n <= 0) continue;
+        if (n <= 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                expire_peers(peers);
+                printf("Expired stale peers\n");
+            }
+            continue;
+        }
         if (n < sizeof(Header)) continue;
 
         auto* header = reinterpret_cast<Header*>(buf);
