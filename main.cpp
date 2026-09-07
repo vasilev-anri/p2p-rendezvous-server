@@ -1,11 +1,10 @@
 #include <chrono>
-#include <iostream>
-#include <map>
 #include <unordered_map>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include "protocol/RendezvousCodec.h"
 #include "protocol/messages.h"
 
 
@@ -29,14 +28,9 @@ Notify build_notify(Peer& peer) {
 
 void expire_peers(std::unordered_map<uint64_t, Peer>& peers) {
     auto now = std::chrono::steady_clock::now();
-    auto before = peers.size();
     std::erase_if(peers, [&](const auto& pair) {
         return now - pair.second.last_seen > PEER_TIMEOUT;
     });
-    auto removed = before - peers.size();
-    if (removed > 0) {
-        printf("Expired %zu stale peers\n", removed);
-    }
 }
 
 int main() {
@@ -54,7 +48,7 @@ int main() {
         exit(1);
     }
 
-    std::cout << "Listening on port 9999" << std::endl;
+    printf("Listening on port 9999\n");
 
     struct timeval tv{};
     tv.tv_sec = 30;
@@ -71,42 +65,31 @@ int main() {
         if (n <= 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 expire_peers(peers);
-                printf("Expired stale peers\n");
             }
             continue;
         }
-        if (n < sizeof(Header)) continue;
+        if (n < Header::HEADER_SIZE) continue;
 
-        auto* header = reinterpret_cast<Header*>(buf);
+        auto header = RendezvousCodec::decode_header(std::span<const uint8_t>(buf, n));
 
-        switch (static_cast<RendezvousMessageType>(header->type)) {
+        switch (header.type) {
             case RendezvousMessageType::REGISTER: {
-                auto* msg = reinterpret_cast<Register*>(buf);
-
-                printf("Raw private endpoint bytes: ip=%u udp=%u tcp=%u\n",
-                   ntohl(msg->private_endpoint.ip),
-                   ntohs(msg->private_endpoint.udp_port),
-                   ntohs(msg->private_endpoint.tcp_port));
+                auto msg = RendezvousCodec::decode_register(std::span<const uint8_t>(buf, n));
 
                 Peer peer{};
 
-                peer.node_id = header->node_id;
+                peer.node_id = header.node_id;
                 peer.public_endpoint.ip = sender.sin_addr.s_addr;
                 peer.public_endpoint.udp_port = sender.sin_port;
-                peer.public_endpoint.tcp_port = msg->private_endpoint.tcp_port;
+                peer.public_endpoint.tcp_port = msg.private_endpoint.tcp_port;
 
-                peer.private_endpoint.ip = msg->private_endpoint.ip;
-                peer.private_endpoint.udp_port = msg->private_endpoint.udp_port;
-                peer.private_endpoint.tcp_port = msg->private_endpoint.tcp_port;
+                peer.private_endpoint.ip = msg.private_endpoint.ip;
+                peer.private_endpoint.udp_port = msg.private_endpoint.udp_port;
+                peer.private_endpoint.tcp_port = msg.private_endpoint.tcp_port;
 
                 peer.last_seen = std::chrono::steady_clock::now();
 
-                peers[header->node_id] = peer;
-
-                printf("Private endpoint received: ip=%s udp_port=%d tcp_port=%d\n",
-                   inet_ntoa(*reinterpret_cast<in_addr*>(&msg->private_endpoint.ip)),
-                   ntohs(msg->private_endpoint.udp_port),
-                   ntohs(msg->private_endpoint.tcp_port));
+                peers[header.node_id] = peer;
 
                 printf("Registered peer %lu - public: %s:%d\n",
                     peer.node_id, inet_ntoa(sender.sin_addr), ntohs(sender.sin_port));
@@ -115,37 +98,37 @@ int main() {
             }
 
             case RendezvousMessageType::KEEPALIVE: {
-                auto it = peers.find(header->node_id);
+                auto it = peers.find(header.node_id);
                 if (it == peers.end()) break;
 
                 it->second.last_seen = std::chrono::steady_clock::now();
                 it->second.public_endpoint.ip = sender.sin_addr.s_addr;
                 it->second.public_endpoint.udp_port = sender.sin_port;
 
-                printf("Keepalive peer %lu\n", header->node_id);
                 break;
             }
 
             case RendezvousMessageType::REQUEST: {
-                auto* msg = reinterpret_cast<Request*>(buf);
+                auto msg = RendezvousCodec::decode_request(std::span<const uint8_t>(buf, n));
 
                 // finding target peer
-                auto it = peers.find(msg->target_node_id);
+                auto it = peers.find(msg.target_node_id);
                 if (it == peers.end()) break;
                 Peer& target = it->second;
 
                 // building requester A
                 Peer requester{};
-                requester.node_id = header->node_id;
+                requester.node_id = header.node_id;
                 requester.public_endpoint.ip = sender.sin_addr.s_addr;
                 requester.public_endpoint.udp_port = sender.sin_port;
-                requester.public_endpoint.tcp_port = msg->private_endpoint.tcp_port;
+                requester.public_endpoint.tcp_port = msg.private_endpoint.tcp_port;
 
-                requester.private_endpoint = msg->private_endpoint;
+                requester.private_endpoint = msg.private_endpoint;
 
                 // notify A about B's endpoints
                 auto notify_a = build_notify(target);
-                ::sendto(fd, &notify_a, sizeof(notify_a), 0, reinterpret_cast<sockaddr*>(&sender),
+                auto data_a = RendezvousCodec::encode_notify(notify_a);
+                ::sendto(fd, data_a.data(), data_a.size(), 0, reinterpret_cast<sockaddr*>(&sender),
                     sizeof(sender));
 
 
@@ -156,17 +139,15 @@ int main() {
                 target_addr.sin_addr.s_addr = target.public_endpoint.ip;
 
                 auto notify_b = build_notify(requester);
-                ::sendto(fd, &notify_b, sizeof(notify_b), 0, reinterpret_cast<sockaddr*>(&target_addr),
+                auto data_b = RendezvousCodec::encode_notify(notify_b);
+                ::sendto(fd, data_b.data(), data_b.size(), 0, reinterpret_cast<sockaddr*>(&target_addr),
                     sizeof(target_addr));
 
-                printf("Coordinated punch: %lu <==> %lu\n", header->node_id, msg->target_node_id);
+                printf("Coordinated punch: %lu <==> %lu\n", header.node_id, msg.target_node_id);
 
                 break;
 
             }
         }
-
-
     }
-
 }
