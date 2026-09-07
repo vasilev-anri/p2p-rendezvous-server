@@ -20,7 +20,7 @@ struct Peer {
 
 Notify build_notify(Peer& peer) {
     Notify notify{};
-    notify.header.type = MessageType::NOTIFY;
+    notify.header.type = RendezvousMessageType::NOTIFY;
     notify.header.node_id = peer.node_id;
     notify.public_endpoint = peer.public_endpoint;
     notify.private_endpoint = peer.private_endpoint;
@@ -79,8 +79,8 @@ int main() {
 
         auto* header = reinterpret_cast<Header*>(buf);
 
-        switch (static_cast<MessageType>(header->type)) {
-            case MessageType::REGISTER: {
+        switch (static_cast<RendezvousMessageType>(header->type)) {
+            case RendezvousMessageType::REGISTER: {
                 auto* msg = reinterpret_cast<Register*>(buf);
 
                 printf("Raw private endpoint bytes: ip=%u udp=%u tcp=%u\n",
@@ -114,7 +114,7 @@ int main() {
                 break;
             }
 
-            case MessageType::KEEPALIVE: {
+            case RendezvousMessageType::KEEPALIVE: {
                 auto it = peers.find(header->node_id);
                 if (it == peers.end()) break;
 
@@ -126,7 +126,7 @@ int main() {
                 break;
             }
 
-            case MessageType::REQUEST: {
+            case RendezvousMessageType::REQUEST: {
                 auto* msg = reinterpret_cast<Request*>(buf);
 
                 // finding target peer
