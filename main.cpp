@@ -79,8 +79,8 @@ int main() {
                 Peer peer{};
 
                 peer.node_id = header.node_id;
-                peer.public_endpoint.ip = sender.sin_addr.s_addr;
-                peer.public_endpoint.udp_port = sender.sin_port;
+                peer.public_endpoint.ip = ntohl(sender.sin_addr.s_addr);
+                peer.public_endpoint.udp_port = ntohs(sender.sin_port);
                 peer.public_endpoint.tcp_port = msg.private_endpoint.tcp_port;
 
                 peer.private_endpoint.ip = msg.private_endpoint.ip;
@@ -102,8 +102,8 @@ int main() {
                 if (it == peers.end()) break;
 
                 it->second.last_seen = std::chrono::steady_clock::now();
-                it->second.public_endpoint.ip = sender.sin_addr.s_addr;
-                it->second.public_endpoint.udp_port = sender.sin_port;
+                it->second.public_endpoint.ip = ntohl(sender.sin_addr.s_addr);
+                it->second.public_endpoint.udp_port = ntohs(sender.sin_port);
 
                 break;
             }
@@ -119,8 +119,8 @@ int main() {
                 // building requester A
                 Peer requester{};
                 requester.node_id = header.node_id;
-                requester.public_endpoint.ip = sender.sin_addr.s_addr;
-                requester.public_endpoint.udp_port = sender.sin_port;
+                requester.public_endpoint.ip = ntohl(sender.sin_addr.s_addr);
+                requester.public_endpoint.udp_port = ntohs(sender.sin_port);
                 requester.public_endpoint.tcp_port = msg.private_endpoint.tcp_port;
 
                 requester.private_endpoint = msg.private_endpoint;
@@ -135,8 +135,8 @@ int main() {
                 // notify B about A's endpoints
                 sockaddr_in target_addr{};
                 target_addr.sin_family = AF_INET;
-                target_addr.sin_port = target.public_endpoint.udp_port;
-                target_addr.sin_addr.s_addr = target.public_endpoint.ip;
+                target_addr.sin_port = htons(target.public_endpoint.udp_port);
+                target_addr.sin_addr.s_addr = htonl(target.public_endpoint.ip);
 
                 auto notify_b = build_notify(requester);
                 auto data_b = RendezvousCodec::encode_notify(notify_b);
