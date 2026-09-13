@@ -6,6 +6,7 @@
 
 #include "protocol/RendezvousCodec.h"
 #include "protocol/messages.h"
+#include "security/hmac_utils.h"
 
 
 constexpr auto PEER_TIMEOUT = std::chrono::seconds(90);
@@ -34,6 +35,8 @@ void expire_peers(std::unordered_map<uint64_t, Peer>& peers) {
 }
 
 int main() {
+    auto secret = HMACAuth::load_secret();
+
     std::unordered_map<uint64_t, Peer> peers;
 
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -68,13 +71,20 @@ int main() {
             }
             continue;
         }
-        if (n < Header::HEADER_SIZE) continue;
 
-        auto header = RendezvousCodec::decode_header(std::span<const uint8_t>(buf, n));
+        auto verified = HMACAuth::verify_and_strip(secret, std::span<const uint8_t>(buf, n));
+        if (!verified) {
+            printf("Dropped unauthenticated packet\n");
+            continue;
+        }
+
+        if (verified->size() < Header::HEADER_SIZE) continue;
+
+        auto header = RendezvousCodec::decode_header(std::span<const uint8_t>(*verified));
 
         switch (header.type) {
             case RendezvousMessageType::REGISTER: {
-                auto msg = RendezvousCodec::decode_register(std::span<const uint8_t>(buf, n));
+                auto msg = RendezvousCodec::decode_register(std::span<const uint8_t>(*verified));
 
                 Peer peer{};
 
@@ -109,7 +119,7 @@ int main() {
             }
 
             case RendezvousMessageType::REQUEST: {
-                auto msg = RendezvousCodec::decode_request(std::span<const uint8_t>(buf, n));
+                auto msg = RendezvousCodec::decode_request(std::span<const uint8_t>(*verified));
 
                 // finding target peer
                 auto it = peers.find(msg.target_node_id);
@@ -128,8 +138,9 @@ int main() {
                 // notify A about B's endpoints
                 auto notify_a = build_notify(target);
                 auto data_a = RendezvousCodec::encode_notify(notify_a);
-                ::sendto(fd, data_a.data(), data_a.size(), 0, reinterpret_cast<sockaddr*>(&sender),
-                    sizeof(sender));
+                auto data_a_signed = HMACAuth::sign(secret, data_a);
+                ::sendto(fd, data_a_signed.data(), data_a_signed.size(), 0, reinterpret_cast<sockaddr*>(&sender),
+                         sizeof(sender));
 
 
                 // notify B about A's endpoints
@@ -140,7 +151,8 @@ int main() {
 
                 auto notify_b = build_notify(requester);
                 auto data_b = RendezvousCodec::encode_notify(notify_b);
-                ::sendto(fd, data_b.data(), data_b.size(), 0, reinterpret_cast<sockaddr*>(&target_addr),
+                auto data_b_signed = HMACAuth::sign(secret, data_b);
+                ::sendto(fd, data_b_signed.data(), data_b_signed.size(), 0, reinterpret_cast<sockaddr*>(&target_addr),
                     sizeof(target_addr));
 
                 printf("Coordinated punch: %lu <==> %lu\n", header.node_id, msg.target_node_id);

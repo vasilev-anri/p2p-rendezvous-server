@@ -3,8 +3,15 @@ project(rendezvous)
 
 include_directories(protocol)
 
+find_package(OpenSSL REQUIRED)
+
+
 set(CMAKE_CXX_STANDARD 23)
 
 add_executable(rendezvous main.cpp
         protocol/RendezvousCodec.cpp
+        protocol/security/hmac_utils.h
+        protocol/security/hmac_utils.cpp
 )
+
+target_link_libraries(rendezvous PRIVATE    OpenSSL::Crypto)
