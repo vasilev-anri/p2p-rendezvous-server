@@ -35,6 +35,9 @@ void expire_peers(std::unordered_map<uint64_t, Peer>& peers) {
 }
 
 int main() {
+    setvbuf(stdout, nullptr, _IONBF, 0);
+
+
     auto secret = HMACAuth::load_secret();
 
     std::unordered_map<uint64_t, Peer> peers;
