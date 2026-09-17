@@ -4,7 +4,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include "protocol/RendezvousCodec.h"
+#include "protocol/rendezvous_codec.h"
 #include "protocol/messages.h"
 #include "security/hmac_utils.h"
 
